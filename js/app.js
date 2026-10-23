@@ -170,7 +170,9 @@ function renderDetails() {
   var cast = movie.actors || "Cast details are not included in the sample movie data. Set an OMDb API key to look them up.";
   var director = movie.director || "Not available in the sample movie data";
   var writer = movie.writer || "Not available in the sample movie data";
-  app.innerHTML = `<p class="eyebrow">Now showing · ${escapeHtml(movie.genre)}</p><section class="movie-profile"><div>${poster(movie, "detail-poster")}</div><div class="movie-profile-info"><h1 class="page-title">${escapeHtml(movie.title)}</h1><p class="movie-facts">${escapeHtml(movie.duration)} <span>·</span> ${escapeHtml(movie.language)} <span>·</span> ${escapeHtml(movie.ratingSource)} ★ ${escapeHtml(movie.rating)}</p><h2>About the movie</h2><p class="lead movie-synopsis">${escapeHtml(movie.synopsis)}</p>${reviews}</div></section><section class="movie-section"><div class="section-heading"><div><p class="eyebrow">On the big screen</p><h2>${escapeHtml(movie.theatre)}</h2><p>${formatDate(movie.date)}</p></div></div><div class="show-list">${showRows}</div></section><section class="movie-section credits-section"><p class="eyebrow">People behind the movie</p><h2>Cast & crew</h2><div class="credits-grid"><div><h3>Cast</h3><p>${escapeHtml(cast)}</p></div><div><h3>Director</h3><p>${escapeHtml(director)}</p></div><div><h3>Writers</h3><p>${escapeHtml(writer)}</p></div></div></section>`;
+  var imdbPhotosUrl = movie.imdbId ? "https://www.imdb.com/title/" + encodeURIComponent(movie.imdbId) + "/mediaindex/" : "";
+  app.innerHTML = `<p class="eyebrow">Now showing · ${escapeHtml(movie.genre)}</p><section class="movie-profile"><div>${poster(movie, "detail-poster")}</div><div class="movie-profile-info"><h1 class="page-title">${escapeHtml(movie.title)}</h1><p class="movie-facts">${escapeHtml(movie.duration)} <span>·</span> ${escapeHtml(movie.language)} <span>·</span> ${escapeHtml(movie.ratingSource)} ★ ${escapeHtml(movie.rating)}</p><h2>About the movie</h2><p class="lead movie-synopsis">${escapeHtml(movie.synopsis)}</p>${reviews}</div></section><section class="movie-section photos-section"><p class="eyebrow">Photos</p><h2>${escapeHtml(movie.title)} photos</h2><div class="movie-photo-grid" id="movie-photos"><p class="lead">Loading photos...</p></div>${imdbPhotosUrl ? `<a class="small-link photo-fallback" href="${imdbPhotosUrl}" target="_blank" rel="noopener noreferrer">View full photo gallery on IMDb ↗</a>` : ""}</section><section class="movie-section"><div class="section-heading"><div><p class="eyebrow">On the big screen</p><h2>${escapeHtml(movie.theatre)}</h2><p>${formatDate(movie.date)}</p></div></div><div class="show-list">${showRows}</div></section><section class="movie-section credits-section"><p class="eyebrow">People behind the movie</p><h2>Cast & crew</h2><div class="credits-grid"><div><h3>Cast</h3><p>${escapeHtml(cast)}</p></div><div><h3>Director</h3><p>${escapeHtml(director)}</p></div><div><h3>Writers</h3><p>${escapeHtml(writer)}</p></div></div></section>`;
+  loadMoviePhotos(movie, imdbPhotosUrl);
 
   var showButtons = app.querySelectorAll("[data-show]");
   for (var i = 0; i < showButtons.length; i++) {
@@ -182,6 +184,25 @@ function renderDetails() {
       });
       location.href = "seats.html";
     });
+  }
+}
+
+async function loadMoviePhotos(movie, imdbPhotosUrl) {
+  var gallery = app.querySelector("#movie-photos");
+  try {
+    var photos = await api("/photos?imdbId=" + encodeURIComponent(movie.imdbId));
+    if (photos.length === 0) {
+      gallery.innerHTML = `<p class="lead">Movie stills could not be loaded. Check TMDB_API_KEY or use the IMDb Photos link.</p>`;
+      return;
+    }
+
+    var photoCards = "";
+    for (var i = 0; i < photos.length; i++) {
+      photoCards += `<a class="movie-photo" href="${escapeHtml(photos[i])}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(photos[i])}" alt="${escapeHtml(movie.title)} movie still ${i + 1}"></a>`;
+    }
+    gallery.innerHTML = photoCards;
+  } catch (error) {
+    gallery.innerHTML = `<p class="lead">Could not load movie stills. Check TMDB_API_KEY or use the IMDb Photos link.</p>`;
   }
 }
 

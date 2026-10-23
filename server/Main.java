@@ -20,12 +20,15 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Main {
     private static final long HOLD_MILLIS = Duration.ofMinutes(5).toMillis();
@@ -36,9 +39,12 @@ public class Main {
     private static final Path BOOKINGS_FILE = DATABASE.resolve("bookings.tsv");
     private static final Object DATABASE_LOCK = new Object();
     private static final String OMDB_KEY = System.getenv("OMDB_API_KEY");
+    private static final String TMDB_API_KEY = System.getenv("TMDB_API_KEY");
+    private static final String TMDB_READ_ACCESS_TOKEN = System.getenv("TMDB_READ_ACCESS_TOKEN");
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
     private static final List<Movie> MOVIES = movies();
     private static final Map<String, Map<String, String>> OMDB_CACHE = new HashMap<>();
+    private static final Map<String, List<String>> PHOTO_CACHE = new HashMap<>();
 
     private static class Show {
         String id;
@@ -132,12 +138,8 @@ public class Main {
     }
 
     private static void seedDatabase(Connection connection) throws SQLException {
-        try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery("SELECT COUNT(*) FROM movies")) {
-            if (rows.next() && rows.getInt(1) > 0) return;
-        }
-
-        String movieSql = "INSERT INTO movies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        String showSql = "INSERT INTO shows VALUES (?, ?, ?, ?)";
+        String movieSql = "INSERT OR IGNORE INTO movies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String showSql = "INSERT OR IGNORE INTO shows VALUES (?, ?, ?, ?)";
         try (PreparedStatement movieInsert = connection.prepareStatement(movieSql);
              PreparedStatement showInsert = connection.prepareStatement(showSql)) {
             for (Movie movie : MOVIES) {
@@ -223,7 +225,70 @@ public class Main {
             "https://upload.wikimedia.org/wikipedia/en/9/99/Dangal_Poster.jpg", "tt5074352",
             "Aamir Khan, Sakshi Tanwar, Fatima Sana Shaikh", "Nitesh Tiwari", "Piyush Gupta, Shreyas Jain, Nitesh Tiwari",
             new Show[] { new Show("wild-1300", "1:00 PM", 230), new Show("wild-1745", "5:45 PM", 260) }));
+        addPopularMovies(movies);
         return movies;
+    }
+
+    private static void addPopularMovies(List<Movie> movies) {
+        String[][] titles = {
+            { "Spider-Man", "Action · Adventure", "English" },
+            { "Spider-Man 2", "Action · Adventure", "English" },
+            { "The Amazing Spider-Man", "Action · Adventure", "English" },
+            { "Spider-Man: No Way Home", "Action · Adventure", "English" },
+            { "Transformers", "Action · Science fiction", "English" },
+            { "Transformers: Dark of the Moon", "Action · Science fiction", "English" },
+            { "The Dark Knight", "Action · Crime", "English" },
+            { "Inception", "Science fiction · Thriller", "English" },
+            { "The Shawshank Redemption", "Drama", "English" },
+            { "The Godfather", "Crime · Drama", "English" },
+            { "The Godfather Part II", "Crime · Drama", "English" },
+            { "Avengers: Endgame", "Action · Adventure", "English" },
+            { "The Avengers", "Action · Adventure", "English" },
+            { "Black Panther", "Action · Adventure", "English" },
+            { "Iron Man", "Action · Science fiction", "English" },
+            { "Titanic", "Drama · Romance", "English" },
+            { "Avatar", "Action · Science fiction", "English" },
+            { "Jurassic Park", "Adventure · Science fiction", "English" },
+            { "The Matrix", "Action · Science fiction", "English" },
+            { "The Lord of the Rings: The Fellowship of the Ring", "Adventure · Fantasy", "English" },
+            { "The Lord of the Rings: The Return of the King", "Adventure · Fantasy", "English" },
+            { "Harry Potter and the Sorcerer's Stone", "Adventure · Fantasy", "English" },
+            { "The Lion King", "Animation · Adventure", "English" },
+            { "Coco", "Animation · Adventure", "English" },
+            { "Inside Out", "Animation · Adventure", "English" },
+            { "Oppenheimer", "Biography · Drama", "English" },
+            { "Barbie", "Comedy · Adventure", "English" },
+            { "Top Gun: Maverick", "Action · Drama", "English" },
+            { "Gladiator", "Action · Drama", "English" },
+            { "Joker", "Crime · Drama", "English" },
+            { "Parasite", "Drama · Thriller", "Korean" },
+            { "3 Idiots", "Comedy · Drama", "Hindi" },
+            { "PK", "Comedy · Drama", "Hindi" },
+            { "Taare Zameen Par", "Drama · Family", "Hindi" },
+            { "Lagaan", "Drama · Sport", "Hindi" },
+            { "Chak De! India", "Drama · Sport", "Hindi" },
+            { "Andhadhun", "Crime · Thriller", "Hindi" },
+            { "Drishyam", "Crime · Thriller", "Hindi" },
+            { "K.G.F: Chapter 2", "Action · Crime", "Kannada" },
+            { "RRR", "Action · Drama", "Telugu" },
+            { "Jawan", "Action · Thriller", "Hindi" },
+            { "Pathaan", "Action · Thriller", "Hindi" },
+            { "Bajrangi Bhaijaan", "Comedy · Drama", "Hindi" },
+            { "Queen", "Comedy · Drama", "Hindi" },
+            { "Tumbbad", "Drama · Fantasy", "Hindi" },
+            { "Sonu Ke Titu Ki Sweety", "Comedy · Romance", "Hindi" },
+            { "Baahubali: The Beginning", "Action · Drama", "Telugu" }
+        };
+
+        String showDate = LocalDate.now().plusDays(1).toString();
+        for (int i = 0; i < titles.length; i++) {
+            String id = "popular-" + (i + 4);
+            Show show = new Show(id + "-evening", "7:00 PM", 250);
+            Movie movie = new Movie(id, titles[i][0], titles[i][1], titles[i][2], "", "N/A", "orbit",
+                "Movie details and cast are provided by OMDb when available.", "Reelhouse Central", showDate,
+                "", "", "", "", "", new Show[] { show });
+            movies.add(movie);
+        }
     }
 
     private static void handleApi(HttpExchange exchange) throws IOException {
@@ -233,6 +298,10 @@ public class Main {
             Map<String, String> query = parsePairs(exchange.getRequestURI().getRawQuery());
             if (path.equals("/api/movies") && method.equals("GET")) {
                 json(exchange, 200, movieListJson());
+                return;
+            }
+            if (path.equals("/api/photos") && method.equals("GET")) {
+                json(exchange, 200, moviePhotosJson(query.get("imdbId")));
                 return;
             }
             if (path.equals("/api/seats") && method.equals("GET")) {
@@ -493,12 +562,13 @@ public class Main {
                     movieShows.toArray(new Show[0]));
             Map<String, String> metadata = imdbMetadata(movie);
             String rating = movie.rating;
-            String ratingSource = "IMDb";
+            String ratingSource = movie.rating.equals("N/A") ? "No rating" : "IMDb";
             String poster = movie.posterUrl;
             String imdbId = movie.imdbId;
             String actors = movie.actors;
             String director = movie.director;
             String writer = movie.writer;
+            String synopsis = movie.synopsis;
             if (metadata.containsKey("imdbRating") && !metadata.get("imdbRating").equals("N/A")) {
                 rating = metadata.get("imdbRating");
                 ratingSource = "IMDb";
@@ -508,6 +578,7 @@ public class Main {
             if (metadata.containsKey("Actors")) actors = metadata.get("Actors");
             if (metadata.containsKey("Director")) director = metadata.get("Director");
             if (metadata.containsKey("Writer")) writer = metadata.get("Writer");
+            if (metadata.containsKey("Plot") && !metadata.get("Plot").equals("N/A")) synopsis = metadata.get("Plot");
             String reviews = imdbId.isBlank() || imdbId.equals("N/A") ? "" : "https://www.imdb.com/title/" + imdbId + "/reviews/";
             String shows = "";
                 for (int j = 0; j < movie.shows.length; j++) {
@@ -523,7 +594,7 @@ public class Main {
                 + ",\"posterUrl\":" + quote(poster) + ",\"actors\":" + quote(actors)
                 + ",\"director\":" + quote(director) + ",\"writer\":" + quote(writer)
                 + ",\"imdbId\":" + quote(imdbId) + ",\"reviewsUrl\":" + quote(reviews)
-                + ",\"synopsis\":" + quote(movie.synopsis) + ",\"theatre\":" + quote(movie.theatre)
+                + ",\"synopsis\":" + quote(synopsis) + ",\"theatre\":" + quote(movie.theatre)
                     + ",\"date\":" + quote(movie.date) + ",\"shows\":[" + shows + "]}");
                 }
         }
@@ -545,17 +616,84 @@ public class Main {
             String actors = readJsonString(response, "Actors");
             String director = readJsonString(response, "Director");
             String writer = readJsonString(response, "Writer");
+            String plot = readJsonString(response, "Plot");
             if (!poster.isEmpty()) fields.put("Poster", poster);
             if (!rating.isEmpty()) fields.put("imdbRating", rating);
             if (!imdbId.isEmpty()) fields.put("imdbID", imdbId);
             if (!actors.isEmpty() && !actors.equals("N/A")) fields.put("Actors", actors);
             if (!director.isEmpty() && !director.equals("N/A")) fields.put("Director", director);
             if (!writer.isEmpty() && !writer.equals("N/A")) fields.put("Writer", writer);
+            if (!plot.isEmpty() && !plot.equals("N/A")) fields.put("Plot", plot);
         } catch (Exception exception) {
             fields.clear();
         }
         OMDB_CACHE.put(movie.id, fields);
         return fields;
+    }
+
+    private static synchronized String moviePhotosJson(String imdbId) {
+        if (imdbId == null || !imdbId.matches("tt[0-9]+")) return "[]";
+        if (PHOTO_CACHE.containsKey(imdbId)) return stringArray(PHOTO_CACHE.get(imdbId));
+        List<String> photos = new ArrayList<>();
+        if ((TMDB_API_KEY == null || TMDB_API_KEY.isBlank())
+            && (TMDB_READ_ACCESS_TOKEN == null || TMDB_READ_ACCESS_TOKEN.isBlank())) {
+            PHOTO_CACHE.put(imdbId, photos);
+            return "[]";
+        }
+
+        try {
+            String findUrl = "https://api.themoviedb.org/3/find/" + imdbId
+                + "?external_source=imdb_id";
+            String findResponse = getTmdbText(findUrl);
+            String movieId = readJsonNumber(findResponse, "id");
+            if (!movieId.isEmpty()) {
+                String imageUrl = "https://api.themoviedb.org/3/movie/" + movieId + "/images";
+                String imageResponse = getTmdbText(imageUrl);
+                int start = imageResponse.indexOf("\"backdrops\"");
+                int end = imageResponse.indexOf("\"posters\"", start);
+                if (start >= 0) {
+                    String backdrops = end > start ? imageResponse.substring(start, end) : imageResponse.substring(start);
+                    Matcher matcher = Pattern.compile("\\\"file_path\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(backdrops);
+                    while (matcher.find() && photos.size() < 8) {
+                        photos.add("https://image.tmdb.org/t/p/w780" + matcher.group(1));
+                    }
+                }
+            }
+        } catch (Exception exception) {
+            photos.clear();
+        }
+        PHOTO_CACHE.put(imdbId, photos);
+        return stringArray(photos);
+    }
+
+    private static String getTmdbText(String url) throws IOException, InterruptedException {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(5)).GET();
+        if (TMDB_READ_ACCESS_TOKEN != null && !TMDB_READ_ACCESS_TOKEN.isBlank()) {
+            request.header("Authorization", "Bearer " + TMDB_READ_ACCESS_TOKEN);
+        } else {
+            String separator = url.contains("?") ? "&" : "?";
+            String key = URLEncoder.encode(TMDB_API_KEY, StandardCharsets.UTF_8);
+            request.uri(URI.create(url + separator + "api_key=" + key));
+        }
+        HttpResponse<String> response = HTTP.send(request.build(), HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() >= 400) throw new IOException("TMDb request failed");
+        return response.body();
+    }
+
+    private static String getText(String url) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(5)).GET().build();
+        return HTTP.send(request, HttpResponse.BodyHandlers.ofString()).body();
+    }
+
+    private static String readJsonNumber(String json, String field) {
+        String search = "\"" + field + "\"";
+        int fieldStart = json.indexOf(search);
+        if (fieldStart < 0) return "";
+        int position = json.indexOf(":", fieldStart + search.length()) + 1;
+        while (position < json.length() && json.charAt(position) == ' ') position++;
+        int end = position;
+        while (end < json.length() && Character.isDigit(json.charAt(end))) end++;
+        return end == position ? "" : json.substring(position, end);
     }
 
     private static String readJsonString(String json, String field) {

@@ -19,16 +19,28 @@ You need a JDK installed. The SQLite JDBC libraries are already in `lib`, so Mav
 
 Do not open `index.html` directly. The pages call the Java API, so they need to be served by the Java server.
 
-The first run creates `db/reelhouse.db`, creates the database tables, and inserts the sample movies and shows. If the older `bookings.tsv` or `seat_holds.tsv` files exist, Java imports their records once. The old files are left in place as backups.
+The first run creates `db/reelhouse.db` and its tables. Java adds any missing starter movies and shows on startup without replacing saved bookings. If the older `bookings.tsv` or `seat_holds.tsv` files exist, Java imports their records once. The old files are left in place as backups.
 
-To use OMDb data, set your own key in the same PowerShell terminal before starting the server:
+For real OMDb details and TMDb movie stills, set your own API keys in the same PowerShell terminal before starting the server:
 
 ```powershell
 $env:OMDB_API_KEY = "YOUR_KEY_HERE"
+$env:TMDB_READ_ACCESS_TOKEN = "YOUR_TMDB_READ_ACCESS_TOKEN"
 .\run-server.bat
 ```
 
-The key is read by Java and is not stored in the website files or sent to the browser. Without a key, bundled poster, rating, and cast/crew details are used.
+The credentials are read by Java and are not stored in the website files or sent to the browser. OMDb can provide posters, ratings, cast/crew, and plot details. TMDb's v4 Read Access Token is sent in an `Authorization: Bearer` header and supplies the extra backdrop images used by the movie photo gallery. A TMDb v3 API key can also be used with `TMDB_API_KEY`. If a credential is missing or rejected, the website uses its bundled movie details and provides an IMDb Photos link instead of the gallery.
+
+The starter catalogue is a curated mix of 50 popular films, including Spider-Man, Transformers, Dangal, and Sonu Ke Titu Ki Sweety. It is not an official IMDb ranking. Java inserts any missing starter movies into SQLite without deleting existing bookings.
+
+To show multiple movie stills in the detail page, register for TMDb API access at <https://www.themoviedb.org/settings/api> and set the v4 Read Access Token before starting Java:
+
+```powershell
+$env:TMDB_READ_ACCESS_TOKEN = "YOUR_TMDB_READ_ACCESS_TOKEN"
+.\run-server.bat
+```
+
+The TMDb token stays on the Java server. The detail page requests backdrop images through `GET /api/photos?imdbId=...`; Java uses the IMDb ID to find the matching TMDb movie and returns its backdrop URLs. If no valid TMDb credential is set or no images are available, the page keeps its poster and links to the movie's IMDb Photos page. OMDb provides movie details and a poster, but it does not provide a photo gallery.
 
 ## Project Files
 
@@ -43,7 +55,7 @@ The key is read by Java and is not stored in the website files or sent to the br
 | `bookings.html` | Shows bookings for the current demo browser session. |
 | `css/style.css` | Shared page layout, colors, and responsive styling. |
 | `js/app.js` | Loads page data with `fetch`, renders the pages, and sends seat/booking requests. It stores only the current selection and a demo session ID in the browser. |
-| `server/Main.java` | Starts the web server, creates the database, handles API requests, checks seat availability, and calls OMDb. |
+| `server/Main.java` | Starts the web server, creates the database, handles API requests, checks seat availability, and calls OMDb/TMDb. |
 | `db/reelhouse.db` | SQLite database created automatically by Java. It is excluded from Git because it is local application data. |
 | `lib/` | Java libraries needed to connect to SQLite. |
 | `run-server.bat` | Adds the libraries to Java's class path and starts the server. |
@@ -52,7 +64,7 @@ The key is read by Java and is not stored in the website files or sent to the br
 
 This is the complete path from selecting a film to getting a ticket. The browser displays pages and sends requests; Java handles each request, checks the rules, and reads or changes SQLite.
 
-1. **Load movies:** `startPage` in `js/app.js` calls `GET /api/movies`. `handleApi` in Java routes the request to `movieListJson`, which reads movies and shows from SQLite. Java can also ask OMDb for current poster and credit information before returning JSON.
+1. **Load movies:** `startPage` in `js/app.js` calls `GET /api/movies`. `handleApi` in Java routes the request to `movieListJson`, which reads movies and shows from SQLite. Java can also ask OMDb for poster, plot, rating, and credit information before returning JSON.
 2. **Choose a movie and show:** Clicking a movie card opens `movie-details.html`. `renderDetails` displays the synopsis, cast, cinema, and showtimes. Selecting a show saves its ID and the movie ID in the browser's `localStorage`, then opens the seat page. This is temporary page state, not a booking.
 3. **Check seats:** `renderSeats` calls `GET /api/seats` with the show ID and demo user ID. Java's `seatStatus` reads confirmed bookings and unexpired holds from SQLite, then returns the unavailable seats and any seats held by this user.
 4. **Hold selected seats:** When a seat is clicked, `changeSeat` sends a form request to `POST /api/holds`, including the show ID, user ID, and selected seat numbers. `createHold` starts a database transaction and calls `hasConflict`. That method checks the `bookings` table and active holds belonging to other users. If a seat is taken, Java returns HTTP `409 Conflict`; otherwise, it saves the seats and a five-minute expiration time in `seat_holds`, then commits the transaction.
@@ -94,6 +106,7 @@ The browser uses these routes on the same localhost server:
 | Method and path | Purpose |
 | --- | --- |
 | `GET /api/movies` | Gets movies and showtimes from SQLite, with optional OMDb details. |
+| `GET /api/photos?imdbId=...` | Gets TMDb backdrops for one movie, when `TMDB_API_KEY` is set. |
 | `GET /api/seats?showId=...&userId=...` | Gets booked seats, active holds, and the current user's held seats. |
 | `POST /api/holds` | Tries to hold a user's selected seats for five minutes. |
 | `POST /api/bookings` | Confirms the booking if the user's hold is still valid. |
@@ -103,7 +116,9 @@ The browser uses these routes on the same localhost server:
 
 ## Why OMDb Is Used
 
-The app calls the [OMDb API](https://www.omdbapi.com/), a separate movie-information service, to look up posters, ratings, cast, director, writer, and IMDb title IDs. The API key is added to the request by Java on the server. It is not an IMDb website URL: IMDb review pages are linked to separately because OMDb does not provide review text. If the lookup fails, the app uses its bundled movie details instead.
+The app calls the [OMDb API](https://www.omdbapi.com/), a separate movie-information service, to look up posters, ratings, plots, cast, director, writer, and IMDb title IDs. The API key is added to the request by Java on the server. It is not an IMDb website URL: IMDb review pages are linked to separately because OMDb does not provide review text. If the lookup fails, the app uses its bundled movie details instead.
+
+For the movie photo grid, Java optionally calls the [TMDb API](https://developer.themoviedb.org/) using the movie's IMDb ID, then returns backdrop image URLs to the page. OMDb does not provide multiple film stills. If `TMDB_API_KEY` is not set or no matching images are found, the movie poster and IMDb Photos link remain available.
 
 ## Booking and Payment Notes
 

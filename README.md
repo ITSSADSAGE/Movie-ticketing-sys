@@ -48,6 +48,20 @@ The key is read by Java and is not stored in the website files or sent to the br
 | `lib/` | Java libraries needed to connect to SQLite. |
 | `run-server.bat` | Adds the libraries to Java's class path and starts the server. |
 
+## How the Movie Booking System Works
+
+This is the complete path from selecting a film to getting a ticket. The browser displays pages and sends requests; Java handles each request, checks the rules, and reads or changes SQLite.
+
+1. **Load movies:** `startPage` in `js/app.js` calls `GET /api/movies`. `handleApi` in Java routes the request to `movieListJson`, which reads movies and shows from SQLite. Java can also ask OMDb for current poster and credit information before returning JSON.
+2. **Choose a movie and show:** Clicking a movie card opens `movie-details.html`. `renderDetails` displays the synopsis, cast, cinema, and showtimes. Selecting a show saves its ID and the movie ID in the browser's `localStorage`, then opens the seat page. This is temporary page state, not a booking.
+3. **Check seats:** `renderSeats` calls `GET /api/seats` with the show ID and demo user ID. Java's `seatStatus` reads confirmed bookings and unexpired holds from SQLite, then returns the unavailable seats and any seats held by this user.
+4. **Hold selected seats:** When a seat is clicked, `changeSeat` sends a form request to `POST /api/holds`, including the show ID, user ID, and selected seat numbers. `createHold` starts a database transaction and calls `hasConflict`. That method checks the `bookings` table and active holds belonging to other users. If a seat is taken, Java returns HTTP `409 Conflict`; otherwise, it saves the seats and a five-minute expiration time in `seat_holds`, then commits the transaction.
+5. **Review or go back:** The booking summary calls `GET /api/seats` again to make sure the user's hold is still active. It shows the price and a countdown. **Back to seats** returns to the seat map without releasing the hold, so the user can change their selection while time remains.
+6. **Confirm the booking:** Clicking **Confirm demo payment** sends the held seats to `POST /api/bookings`. `createBooking` checks the unexpired hold and checks for conflicts again. If everything is valid, one transaction inserts a row into `bookings` and deletes the temporary row from `seat_holds`. Java returns the booking ID and ticket details. If the hold expired, Java rejects the request and asks the user to select seats again.
+7. **Show the ticket:** The browser opens `ticket.html` with the booking ID. `renderTicket` calls `GET /api/bookings` with that ID and the demo user ID. Java reads the saved record and returns the movie, show, seats, total, and booking ID. **My bookings** uses the same endpoint to list this demo user's bookings.
+
+In short, movie selection stays in the browser until seats are requested. Holds and confirmed tickets are stored in SQLite by the Java server. The payment step is only a demo confirmation; it does not charge money.
+
 ## How the Java Database Works
 
 The database is SQLite: a SQL database stored in the single file `db/reelhouse.db`. Java connects to it with JDBC, the standard Java interface for sending SQL commands to a database. The SQLite JDBC driver used here is [Xerial SQLite JDBC](https://github.com/xerial/sqlite-jdbc), downloaded from [Maven Central](https://repo.maven.apache.org/maven2/org/xerial/sqlite-jdbc/). It lets the Java program use SQL without installing a separate database server. The small SLF4J jars in `lib` are dependencies used by that driver.

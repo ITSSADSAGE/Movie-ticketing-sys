@@ -21,15 +21,22 @@ Do not open `index.html` directly. The pages call the Java API, so they need to 
 
 The first run creates `db/reelhouse.db` and its tables. Java adds any missing starter movies and shows on startup without replacing saved bookings. If the older `bookings.tsv` or `seat_holds.tsv` files exist, Java imports their records once. The old files are left in place as backups.
 
-For real OMDb details and TMDb movie stills, set your own API keys in the same PowerShell terminal before starting the server:
+The launcher reads API keys from the optional local file `local-api-keys.bat`. That file is excluded by `.gitignore`, so it stays on this computer and is not pushed to the public repository. Create the file with your own keys if it is not already present:
 
-```powershell
-$env:OMDB_API_KEY = "YOUR_KEY_HERE"
-$env:TMDB_READ_ACCESS_TOKEN = "YOUR_TMDB_READ_ACCESS_TOKEN"
-.\run-server.bat
+```bat
+@echo off
+set "OMDB_API_KEY=YOUR_OMDB_KEY"
+set "TMDB_READ_ACCESS_TOKEN=YOUR_TMDB_READ_ACCESS_TOKEN"
 ```
 
-The credentials are read by Java and are not stored in the website files or sent to the browser. OMDb can provide posters, ratings, cast/crew, and plot details. TMDb's v4 Read Access Token is sent in an `Authorization: Bearer` header and supplies the extra backdrop images used by the movie photo gallery. A TMDb v3 API key can also be used with `TMDB_API_KEY`. If a credential is missing or rejected, the website uses its bundled movie details and provides an IMDb Photos link instead of the gallery.
+Then run `.\run-server.bat` from PowerShell or `run-server.bat` from Command Prompt. Java reads the credentials from its environment; they are not sent to the browser. OMDb provides posters, ratings, cast/crew, and plot details. TMDb's v4 Read Access Token is sent in an `Authorization: Bearer` header for the photo gallery. A TMDb v3 API key can also be set with `TMDB_API_KEY`. If a credential is missing or rejected, the website uses bundled details and provides an IMDb Photos link instead of the gallery.
+
+To start the backend Java command directly from Command Prompt, first load the local keys, then run Java with the JDBC jars on its class path:
+
+```bat
+call local-api-keys.bat
+java --enable-native-access=ALL-UNNAMED --add-modules jdk.httpserver -cp "lib\sqlite-jdbc.jar;lib\slf4j-api.jar;lib\slf4j-nop.jar" server\Main.java
+```
 
 The starter catalogue is a curated mix of 50 popular films, including Spider-Man, Transformers, Dangal, and Sonu Ke Titu Ki Sweety. It is not an official IMDb ranking. Java inserts any missing starter movies into SQLite without deleting existing bookings.
 
